@@ -5,6 +5,7 @@ import type {
   Revision,
   SourceDocument,
 } from "@/lib/schema";
+import type { DynamicWorldEvidence } from "@/lib/spatial-demo";
 
 export type ReportInput = {
   projectId: string;
@@ -16,6 +17,7 @@ export type ReportInput = {
   documents: SourceDocument[];
   evidence: EvidenceItem[];
   coverage: number;
+  dynamicWorld?: DynamicWorldEvidence;
   uploadedDocumentTitle?: string;
 };
 
@@ -295,8 +297,83 @@ export async function createVerdaTraceReport(input: ReportInput) {
     divider();
   });
 
+  if (input.dynamicWorld) {
+    addPage();
+    sectionTitle("05 · Spatial evidence", "Dynamic World change summary");
+    text(
+      `${input.dynamicWorld.parcelLabel} · ${input.dynamicWorld.baselineYear} baseline versus ${input.dynamicWorld.currentYear} current`,
+      margin,
+      contentWidth,
+      9,
+      INK,
+      "bold",
+    );
+    text(
+      input.dynamicWorld.summary,
+      margin,
+      contentWidth,
+      9,
+      MUTED,
+    );
+    y += 4;
+    input.dynamicWorld.classes.forEach((item, index) => {
+      ensure(22);
+      const delta = item.current - item.baseline;
+      doc.setFillColor(index % 2 === 0 ? 241 : 248, index % 2 === 0 ? 246 : 249, index % 2 === 0 ? 242 : 247);
+      doc.roundedRect(margin, y - 3, contentWidth, 17, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(FOREST[0], FOREST[1], FOREST[2]);
+      doc.text(item.label, margin + 5, y + 3);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text(
+        `${item.baseline.toFixed(1)}%  →  ${item.current.toFixed(1)}%`,
+        margin + 75,
+        y + 3,
+      );
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(
+        delta > 0 ? AMBER[0] : FOREST[0],
+        delta > 0 ? AMBER[1] : FOREST[1],
+        delta > 0 ? AMBER[2] : FOREST[2],
+      );
+      doc.text(
+        `${delta > 0 ? "+" : ""}${delta.toFixed(1)} percentage points`,
+        pageWidth - margin - 5,
+        y + 3,
+        { align: "right" },
+      );
+      y += 21;
+    });
+    text(
+      `Layer confidence: ${Math.round(input.dynamicWorld.confidence * 100)}%.`,
+      margin,
+      contentWidth,
+      8,
+      FOREST,
+      "bold",
+    );
+    y += 3;
+    sectionTitle("Evidence boundary", "Interpretation and limitations");
+    text(
+      input.dynamicWorld.disclaimer,
+      margin,
+      contentWidth,
+      9,
+      MUTED,
+    );
+    text(
+      "Land-cover change is a review signal. It must be compared with verified project geometry, source obligations, field observations, and expert judgment before operational use.",
+      margin,
+      contentWidth,
+      9,
+      MUTED,
+    );
+  }
+
   addPage();
-  sectionTitle("05 · Sources", "Document and evidence lineage");
+  sectionTitle("06 · Sources", "Document and evidence lineage");
   input.documents.forEach((item) => {
     ensure(23);
     text(item.title, margin, contentWidth, 9, INK, "bold");
@@ -320,7 +397,7 @@ export async function createVerdaTraceReport(input: ReportInput) {
   });
 
   ensure(65);
-  sectionTitle("06 · Assumptions", "Responsible-use statement");
+  sectionTitle("07 · Assumptions", "Responsible-use statement");
   [
     "Missing proof is reported as missing evidence, not as non-compliance.",
     "No undocumented polygon, field observation, ecological outcome, or deadline is fabricated.",

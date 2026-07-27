@@ -86,7 +86,7 @@ export default function ResearchPage() {
         </div>
         <figure className="cc-research-hero-banner">
           <img
-            src="/brand/verdatrace/banner-enterprise.png"
+            src="/brand/verdatrace/banner-enterprise.webp"
             width="1672"
             height="941"
             alt="VerdaTrace connects environmental approvals, evidence, maps, and reviewed action."

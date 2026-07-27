@@ -5,7 +5,9 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
+  BarChart3,
   Bot,
+  Building2,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -21,6 +23,7 @@ import {
   Fingerprint,
   GitCompareArrows,
   Layers3,
+  Leaf,
   Lightbulb,
   Map,
   MapPin,
@@ -31,10 +34,13 @@ import {
   PanelLeft,
   Radar,
   RotateCcw,
+  Satellite,
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
+  TreePine,
   Upload,
   UploadCloud,
   X,
@@ -51,13 +57,19 @@ import {
 import { createInspectionPlan } from "@/lib/inspection";
 import { downloadVerdaTraceReport } from "@/lib/report-pdf";
 import { analysisResultSchema, obligationSchema } from "@/lib/schema";
+import { dynamicWorldEvidence } from "@/lib/spatial-demo";
 import type {
   AnalysisResult,
   AssessmentStatus,
+  InspectionTask,
   Obligation,
 } from "@/lib/schema";
 import { CaseMap } from "./CaseMap";
 import { SiteFooter, SiteHeader } from "./SiteHeader";
+import type {
+  SpatialGeometryMetadata,
+  SpatialInsight,
+} from "@/lib/spatial-demo";
 
 type Tab =
   | "overview"
@@ -137,6 +149,7 @@ type PersistedDemoWorkspace = {
   analysis: AnalysisResult | null;
   chatMessages: ChatMessage[];
   agentActivity: string[];
+  spatialInspectionTasks: InspectionTask[];
   demoRemaining: number;
   rateLimitResetAt: number;
 };
@@ -158,6 +171,22 @@ const statusOrder: AssessmentStatus[] = [
   "verified",
   "superseded",
 ];
+
+function isInspectionTask(value: unknown): value is InspectionTask {
+  if (!value || typeof value !== "object") return false;
+  const task = value as Partial<InspectionTask>;
+  return Boolean(
+    typeof task.id === "string" &&
+      (task.priority === 1 || task.priority === 2 || task.priority === 3) &&
+      typeof task.title === "string" &&
+      typeof task.location === "string" &&
+      Array.isArray(task.requiredEvidence) &&
+      task.requiredEvidence.every((item) => typeof item === "string") &&
+      typeof task.rationale === "string" &&
+      typeof task.safetyNote === "string" &&
+      Array.isArray(task.obligationIds),
+  );
+}
 
 function StatusPill({ status }: { status: AssessmentStatus }) {
   return (
@@ -214,6 +243,9 @@ export function CanopyApp() {
     DEFAULT_CHAT_MESSAGE,
   ]);
   const [agentActivity, setAgentActivity] = useState<string[]>([]);
+  const [spatialInspectionTasks, setSpatialInspectionTasks] = useState<
+    InspectionTask[]
+  >([]);
   const seenHashes = useRef(new Set<string>());
   const persistenceReady = useRef(false);
 
@@ -270,6 +302,11 @@ export function CanopyApp() {
                 )
                 .slice(-50)
             : [];
+          const restoredSpatialTasks = Array.isArray(
+            stored.spatialInspectionTasks,
+          )
+            ? stored.spatialInspectionTasks.filter(isInspectionTask).slice(0, 6)
+            : [];
 
           if (stored.tab && validTabs.includes(stored.tab)) setTab(stored.tab);
           if (restoredObligations.success) {
@@ -289,6 +326,9 @@ export function CanopyApp() {
             seenHashes.current.add(restoredAnalysis.data.document.hash);
           }
           if (restoredMessages.length) setChatMessages(restoredMessages);
+          if (restoredSpatialTasks.length) {
+            setSpatialInspectionTasks(restoredSpatialTasks);
+          }
           if (Array.isArray(stored.agentActivity)) {
             setAgentActivity(
               stored.agentActivity
@@ -332,6 +372,7 @@ export function CanopyApp() {
         analysis,
         chatMessages: chatMessages.slice(-50),
         agentActivity: agentActivity.slice(0, 8),
+        spatialInspectionTasks: spatialInspectionTasks.slice(0, 6),
         demoRemaining,
         rateLimitResetAt,
       };
@@ -353,6 +394,7 @@ export function CanopyApp() {
     obligations,
     rateLimitResetAt,
     search,
+    spatialInspectionTasks,
     statusFilter,
     tab,
   ]);
@@ -400,8 +442,16 @@ export function CanopyApp() {
   }, [obligations, search, statusFilter]);
 
   const inspectionTasks = useMemo(
-    () => createInspectionPlan(obligations),
-    [obligations],
+    () => [
+      ...spatialInspectionTasks,
+      ...createInspectionPlan(obligations).filter(
+        (task) =>
+          !spatialInspectionTasks.some(
+            (spatialTask) => spatialTask.id === task.id,
+          ),
+      ),
+    ],
+    [obligations, spatialInspectionTasks],
   );
 
   const toggleReviewer = (id: string) => {
@@ -491,6 +541,7 @@ export function CanopyApp() {
         documents: sourceDocuments,
         evidence: evidenceItems,
         coverage,
+        dynamicWorld: dynamicWorldEvidence,
         uploadedDocumentTitle: analysis?.document.title,
       });
     } finally {
@@ -663,7 +714,7 @@ export function CanopyApp() {
       <section className="demo-stage">
         <div className="demo-stage-heading">
           <div>
-            <span>Case intelligence</span>
+            <span>Screen 01 · Case intelligence</span>
             <h2>From approval language to review-ready action.</h2>
           </div>
           <div className="demo-trust">
@@ -812,7 +863,7 @@ export function CanopyApp() {
             )}
             {tab === "revisions" && <RevisionTab />}
             {tab === "inspection" && (
-              <InspectionTab obligations={obligations} />
+              <InspectionTab tasks={inspectionTasks} />
             )}
             {tab === "documents" && <DocumentsTab />}
             {tab === "agent" && (
@@ -828,6 +879,24 @@ export function CanopyApp() {
           </div>
         </div>
       </section>
+
+      <DynamicWorldScreen
+        isExporting={isExporting}
+        onExport={() => void exportReport()}
+        onQueueTasks={(tasks) => {
+          setSpatialInspectionTasks(tasks);
+          setAgentActivity((current) => [
+            `Added ${tasks.length} spatial review tasks to the inspection plan`,
+            ...current,
+          ].slice(0, 8));
+          setTab("inspection");
+          window.setTimeout(() => {
+            document
+              .querySelector(".demo-workspace")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 80);
+        }}
+      />
 
       <section className="demo-moat">
         <div>
@@ -1034,6 +1103,718 @@ export function CanopyApp() {
         </div>
       )}
     </main>
+  );
+}
+
+const SPATIAL_STORAGE_KEY = "verdatrace.demo.spatial.v1";
+
+function collectCoordinatePairs(
+  value: unknown,
+  pairs: Array<[number, number]>,
+) {
+  if (!Array.isArray(value)) return;
+  if (
+    value.length >= 2 &&
+    typeof value[0] === "number" &&
+    typeof value[1] === "number"
+  ) {
+    pairs.push([value[0], value[1]]);
+    return;
+  }
+  value.forEach((item) => collectCoordinatePairs(item, pairs));
+}
+
+async function parseSpatialGeometry(
+  file: File,
+): Promise<SpatialGeometryMetadata> {
+  if (file.size === 0 || file.size > 3 * 1024 * 1024) {
+    throw new Error("Geometry files must be between 1 byte and 3 MB.");
+  }
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (!["geojson", "json", "kml"].includes(extension ?? "")) {
+    throw new Error("Use a GeoJSON, JSON, or KML boundary file.");
+  }
+
+  const source = await file.text();
+  const pairs: Array<[number, number]> = [];
+  let featureCount = 0;
+  const geometryTypes = new Set<string>();
+
+  if (extension === "kml") {
+    const document = new DOMParser().parseFromString(
+      source,
+      "application/xml",
+    );
+    if (document.querySelector("parsererror")) {
+      throw new Error("The KML file could not be parsed.");
+    }
+    const geometries = [
+      ...document.querySelectorAll("Polygon, MultiGeometry, LineString"),
+    ];
+    featureCount = Math.max(1, geometries.length);
+    geometries.forEach((node) => geometryTypes.add(node.tagName));
+    document.querySelectorAll("coordinates").forEach((node) => {
+      node.textContent
+        ?.trim()
+        .split(/\s+/)
+        .forEach((coordinate) => {
+          const [longitude, latitude] = coordinate
+            .split(",")
+            .map(Number);
+          if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+            pairs.push([longitude, latitude]);
+          }
+        });
+    });
+  } else {
+    let data: unknown;
+    try {
+      data = JSON.parse(source);
+    } catch {
+      throw new Error("The GeoJSON file contains invalid JSON.");
+    }
+    if (!data || typeof data !== "object") {
+      throw new Error("The GeoJSON boundary is empty.");
+    }
+    const root = data as {
+      type?: string;
+      features?: Array<{
+        geometry?: { type?: string; coordinates?: unknown } | null;
+      }>;
+      geometry?: { type?: string; coordinates?: unknown } | null;
+      coordinates?: unknown;
+    };
+    if (root.type === "FeatureCollection" && Array.isArray(root.features)) {
+      featureCount = root.features.length;
+      root.features.forEach((feature) => {
+        if (feature.geometry?.type) geometryTypes.add(feature.geometry.type);
+        collectCoordinatePairs(feature.geometry?.coordinates, pairs);
+      });
+    } else if (root.type === "Feature" && root.geometry) {
+      featureCount = 1;
+      if (root.geometry.type) geometryTypes.add(root.geometry.type);
+      collectCoordinatePairs(root.geometry.coordinates, pairs);
+    } else if (root.type && root.coordinates) {
+      featureCount = 1;
+      geometryTypes.add(root.type);
+      collectCoordinatePairs(root.coordinates, pairs);
+    } else {
+      throw new Error(
+        "The file must contain a GeoJSON Feature, FeatureCollection, or geometry.",
+      );
+    }
+  }
+
+  if (featureCount < 1 || pairs.length < 4) {
+    throw new Error("No usable parcel boundary coordinates were found.");
+  }
+  const invalidPair = pairs.find(
+    ([longitude, latitude]) =>
+      longitude < -180 ||
+      longitude > 180 ||
+      latitude < -90 ||
+      latitude > 90,
+  );
+  if (invalidPair) {
+    throw new Error("The boundary contains coordinates outside valid bounds.");
+  }
+  const longitudes = pairs.map(([longitude]) => longitude);
+  const latitudes = pairs.map(([, latitude]) => latitude);
+
+  return {
+    fileName: file.name,
+    geometryType: [...geometryTypes].join(" + ") || "Boundary",
+    featureCount,
+    coordinateCount: pairs.length,
+    bbox: [
+      Math.min(...longitudes),
+      Math.min(...latitudes),
+      Math.max(...longitudes),
+      Math.max(...latitudes),
+    ],
+  };
+}
+
+function DynamicWorldScreen({
+  isExporting,
+  onExport,
+  onQueueTasks,
+}: {
+  isExporting: boolean;
+  onExport: () => void;
+  onQueueTasks: (tasks: InspectionTask[]) => void;
+}) {
+  const [selectedYear, setSelectedYear] = useState<"baseline" | "current">(
+    "current",
+  );
+  const [geometry, setGeometry] =
+    useState<SpatialGeometryMetadata | null>(null);
+  const [geometryError, setGeometryError] = useState("");
+  const [spatialQuestion, setSpatialQuestion] = useState(
+    "Interpret the land-cover change and recommend the safest next review actions.",
+  );
+  const [spatialInsight, setSpatialInsight] =
+    useState<SpatialInsight | null>(null);
+  const [spatialError, setSpatialError] = useState("");
+  const [spatialRunning, setSpatialRunning] = useState(false);
+  const [tasksQueued, setTasksQueued] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SPATIAL_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as {
+        selectedYear?: "baseline" | "current";
+        geometry?: SpatialGeometryMetadata | null;
+        spatialQuestion?: string;
+        spatialInsight?: SpatialInsight | null;
+        tasksQueued?: boolean;
+      };
+      if (
+        parsed.selectedYear === "baseline" ||
+        parsed.selectedYear === "current"
+      ) {
+        setSelectedYear(parsed.selectedYear);
+      }
+      if (parsed.geometry?.fileName && Array.isArray(parsed.geometry.bbox)) {
+        setGeometry(parsed.geometry);
+      }
+      if (typeof parsed.spatialQuestion === "string") {
+        setSpatialQuestion(parsed.spatialQuestion.slice(0, 800));
+      }
+      if (parsed.spatialInsight?.headline) {
+        setSpatialInsight(parsed.spatialInsight);
+      }
+      setTasksQueued(Boolean(parsed.tasksQueued));
+    } catch {
+      // Start with the bundled spatial example if storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          SPATIAL_STORAGE_KEY,
+          JSON.stringify({
+            selectedYear,
+            geometry,
+            spatialQuestion,
+            spatialInsight,
+            tasksQueued,
+          }),
+        );
+      } catch {
+        // Keep the spatial workspace in memory when storage is unavailable.
+      }
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [
+    geometry,
+    selectedYear,
+    spatialInsight,
+    spatialQuestion,
+    tasksQueued,
+  ]);
+
+  const year =
+    selectedYear === "baseline"
+      ? dynamicWorldEvidence.baselineYear
+      : dynamicWorldEvidence.currentYear;
+  const valueKey = selectedYear === "baseline" ? "baseline" : "current";
+  const tree = dynamicWorldEvidence.classes.find(
+    (item) => item.id === "tree",
+  )!;
+  const built = dynamicWorldEvidence.classes.find(
+    (item) => item.id === "built",
+  )!;
+
+  const handleGeometry = async (file: File | null) => {
+    if (!file) return;
+    setGeometryError("");
+    setSpatialError("");
+    setSpatialInsight(null);
+    setTasksQueued(false);
+    try {
+      setGeometry(await parseSpatialGeometry(file));
+    } catch (error) {
+      setGeometry(null);
+      setGeometryError(
+        error instanceof Error ? error.message : "Geometry validation failed.",
+      );
+    }
+  };
+
+  const runSpatialReview = async (event?: FormEvent) => {
+    event?.preventDefault();
+    setSpatialRunning(true);
+    setSpatialError("");
+    setTasksQueued(false);
+    try {
+      const response = await fetch("/api/spatial-insights", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          question: spatialQuestion,
+          parcelLabel: dynamicWorldEvidence.parcelLabel,
+          baselineYear: dynamicWorldEvidence.baselineYear,
+          currentYear: dynamicWorldEvidence.currentYear,
+          confidence: dynamicWorldEvidence.confidence,
+          classes: dynamicWorldEvidence.classes.map((item) => ({
+            label: item.label,
+            baseline: item.baseline,
+            current: item.current,
+          })),
+          geometry,
+        }),
+      });
+      const result = (await response.json()) as SpatialInsight & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Spatial review failed.");
+      }
+      setSpatialInsight(result);
+    } catch (error) {
+      setSpatialError(
+        error instanceof Error
+          ? error.message
+          : "Spatial intelligence could not complete the review.",
+      );
+    } finally {
+      setSpatialRunning(false);
+    }
+  };
+
+  const queueSpatialTasks = () => {
+    if (!spatialInsight) return;
+    const location = geometry
+      ? `Uploaded boundary · ${geometry.fileName}`
+      : "Project parcel boundary required";
+    const tasks = spatialInsight.actions.map<InspectionTask>((action, index) => ({
+      id: `spatial-ai-${index + 1}-${action.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}`,
+      priority: action.priority,
+      title: action.title,
+      location,
+      requiredEvidence: action.requiredEvidence,
+      rationale: action.rationale,
+      safetyNote:
+        "Confirm land access, field safety, and expert approval before collection.",
+      obligationIds: [],
+    }));
+    setTasksQueued(true);
+    onQueueTasks(tasks);
+  };
+
+  return (
+    <section className="demo-spatial-stage" id="spatial-intelligence">
+      <div className="demo-spatial-heading">
+        <div>
+          <span>Screen 02 · Spatial evidence</span>
+          <h2>See what changed around every documented parcel.</h2>
+          <p>
+            Dynamic World turns annual land-cover composition into explainable
+            evidence that can be reviewed beside the governing obligation.
+          </p>
+        </div>
+        <div className="demo-spatial-status">
+          <span>
+            <Satellite size={14} /> Dynamic World layer
+          </span>
+          <strong>
+            <i /> AI review available
+          </strong>
+        </div>
+      </div>
+
+      <div className="dw-workspace">
+        <header className="dw-toolbar">
+          <div>
+            <span className="dw-product-mark">
+              <Layers3 size={16} />
+            </span>
+            <div>
+              <strong>Land-cover change evidence</strong>
+              <small>{dynamicWorldEvidence.parcelLabel}</small>
+            </div>
+          </div>
+          <div className="dw-year-switch" aria-label="Comparison year">
+            <button
+              className={selectedYear === "baseline" ? "active" : ""}
+              onClick={() => setSelectedYear("baseline")}
+            >
+              Baseline · {dynamicWorldEvidence.baselineYear}
+            </button>
+            <button
+              className={selectedYear === "current" ? "active" : ""}
+              onClick={() => setSelectedYear("current")}
+            >
+              Current · {dynamicWorldEvidence.currentYear}
+            </button>
+          </div>
+        </header>
+
+        <div className="dw-main-grid">
+          <aside className="dw-composition">
+            <div className="dw-panel-title">
+              <span>Parcel composition</span>
+              <strong>{year} annual composite</strong>
+            </div>
+            <div className="dw-class-list">
+              {dynamicWorldEvidence.classes.map((item) => {
+                const value = item[valueKey];
+                const delta = item.current - item.baseline;
+                return (
+                  <article key={item.id}>
+                    <div>
+                      <i style={{ background: item.color }} />
+                      <span>{item.label}</span>
+                      <strong>{value.toFixed(1)}%</strong>
+                    </div>
+                    <div className="dw-class-track">
+                      <span
+                        style={{
+                          width: `${value}%`,
+                          background: item.color,
+                        }}
+                      />
+                    </div>
+                    <small
+                      className={
+                        selectedYear === "current"
+                          ? delta > 0
+                            ? "increase"
+                            : "decrease"
+                          : ""
+                      }
+                    >
+                      {selectedYear === "current"
+                        ? `${delta > 0 ? "+" : ""}${delta.toFixed(1)} pp vs baseline`
+                        : "Baseline reference"}
+                    </small>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="dw-confidence">
+              <div>
+                <SlidersHorizontal size={14} />
+                <span>
+                  <strong>Layer confidence</strong>
+                  <small>Confidence-aware display</small>
+                </span>
+              </div>
+              <strong>
+                {Math.round(dynamicWorldEvidence.confidence * 100)}%
+              </strong>
+            </div>
+            <label className={`dw-geometry-upload ${geometry ? "ready" : ""}`}>
+              <input
+                type="file"
+                accept=".geojson,.json,.kml,application/geo+json,application/json,application/vnd.google-earth.kml+xml"
+                onChange={(event) =>
+                  void handleGeometry(event.target.files?.[0] ?? null)
+                }
+              />
+              {geometry ? (
+                <FileCheck2 size={16} />
+              ) : (
+                <UploadCloud size={16} />
+              )}
+              <span>
+                <strong>
+                  {geometry ? "Boundary validated" : "Attach parcel boundary"}
+                </strong>
+                <small>
+                  {geometry
+                    ? `${geometry.geometryType} · ${geometry.coordinateCount} vertices`
+                    : "GeoJSON or KML · processed locally"}
+                </small>
+              </span>
+              <ArrowRight size={13} />
+            </label>
+            {geometryError && (
+              <p className="dw-inline-error">
+                <CircleAlert size={12} /> {geometryError}
+              </p>
+            )}
+          </aside>
+
+          <div
+            className={`dw-map dw-map-${selectedYear}`}
+            aria-label={`Illustrative ${year} Dynamic World land-cover map`}
+          >
+            <div className="dw-map-grid" />
+            <span className="dw-zone dw-zone-tree-one" />
+            <span className="dw-zone dw-zone-tree-two" />
+            <span className="dw-zone dw-zone-shrub" />
+            <span className="dw-zone dw-zone-bare" />
+            <span className="dw-zone dw-zone-built" />
+            <span className="dw-road dw-road-one" />
+            <span className="dw-road dw-road-two" />
+            <div className="dw-parcel">
+              <span>{geometry ? "Geometry validated" : "Illustrative parcel"}</span>
+              <small>
+                {geometry
+                  ? `Map remains illustrative · ${geometry.featureCount} feature${geometry.featureCount === 1 ? "" : "s"} parsed`
+                  : "Boundary required before operational use"}
+              </small>
+            </div>
+            <div className="dw-map-meta">
+              <span>
+                <i /> {year} selected
+              </span>
+              <span>10 m class probabilities</span>
+            </div>
+            <div className="dw-map-legend">
+              {dynamicWorldEvidence.classes.map((item) => (
+                <span key={item.id}>
+                  <i style={{ background: item.color }} />
+                  {item.label.replace(" cover", "")}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <aside className="dw-change-panel">
+            <div className="dw-panel-title">
+              <span>Baseline vs current</span>
+              <strong>Change evidence</strong>
+            </div>
+            <article className="dw-change-card primary">
+              <TreePine size={17} />
+              <span>Tree-cover change</span>
+              <strong>
+                {(tree.current - tree.baseline).toFixed(1)} pp
+              </strong>
+              <small>
+                {tree.baseline}% → {tree.current}%
+              </small>
+            </article>
+            <article className="dw-change-card">
+              <Building2 size={17} />
+              <span>Built-area change</span>
+              <strong>+{(built.current - built.baseline).toFixed(1)} pp</strong>
+              <small>
+                {built.baseline}% → {built.current}%
+              </small>
+            </article>
+            <div className="dw-review-signal">
+              <Radar size={16} />
+              <div>
+                <strong>Expert review suggested</strong>
+                <p>
+                  Compare the signal with field evidence and the current
+                  obligation before planning an inspection.
+                </p>
+              </div>
+            </div>
+            <div className="dw-report-ready">
+              <CheckCircle2 size={15} />
+              <span>
+                <strong>Report ready</strong>
+                Change evidence is included in the branded export.
+              </span>
+            </div>
+            <button
+              className="dw-export-button"
+              onClick={onExport}
+              disabled={isExporting}
+            >
+              <Download size={14} />
+              {isExporting ? "Building report…" : "Export spatial evidence"}
+            </button>
+          </aside>
+        </div>
+
+        <section className="dw-ai-workbench">
+          <form className="dw-ai-controls" onSubmit={runSpatialReview}>
+            <div className="dw-ai-title">
+              <span>
+                <Sparkles size={15} />
+              </span>
+              <div>
+                <strong>VerdaTrace spatial intelligence</strong>
+                <small>
+                  Bounded interpretation · evidence actions · human approval
+                </small>
+              </div>
+            </div>
+            <label>
+              <span>Ask about this land-cover signal</span>
+              <textarea
+                value={spatialQuestion}
+                onChange={(event) =>
+                  setSpatialQuestion(event.target.value.slice(0, 800))
+                }
+                rows={3}
+                placeholder="Ask for an interpretation or a verification plan…"
+              />
+            </label>
+            <div className="dw-ai-prompts">
+              {[
+                "What should be verified first?",
+                "Explain the tree-cover change.",
+                "Create a desk-to-field review plan.",
+              ].map((prompt) => (
+                <button
+                  type="button"
+                  key={prompt}
+                  onClick={() => setSpatialQuestion(prompt)}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+            <button
+              className="dw-ai-run"
+              disabled={spatialRunning || spatialQuestion.trim().length < 2}
+            >
+              {spatialRunning ? (
+                <>
+                  <span className="spinner" /> Interpreting evidence…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={15} /> Run spatial review
+                </>
+              )}
+            </button>
+            {spatialError && (
+              <p className="dw-inline-error">
+                <CircleAlert size={12} /> {spatialError}
+              </p>
+            )}
+          </form>
+
+          <div className="dw-ai-output" aria-live="polite">
+            {spatialInsight ? (
+              <>
+                <header>
+                  <span
+                    className={`dw-risk-signal ${spatialInsight.riskSignal}`}
+                  >
+                    <i />
+                    {spatialInsight.riskSignal.replace("_", " ")}
+                  </span>
+                  <small>Generated from the visible comparison</small>
+                </header>
+                <h3>{spatialInsight.headline}</h3>
+                <p>{spatialInsight.answer}</p>
+                <div className="dw-confidence-summary">
+                  <ShieldCheck size={14} />
+                  <span>{spatialInsight.confidenceSummary}</span>
+                </div>
+                <div className="dw-ai-actions">
+                  <span>Suggested review actions</span>
+                  {spatialInsight.actions.map((action) => (
+                    <article key={`${action.priority}-${action.title}`}>
+                      <strong>P{action.priority}</strong>
+                      <div>
+                        <h4>{action.title}</h4>
+                        <p>{action.rationale}</p>
+                        <small>{action.requiredEvidence.join(" · ")}</small>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="dw-evidence-boundary">
+                  <CircleAlert size={14} />
+                  <p>{spatialInsight.evidenceBoundary}</p>
+                </div>
+                <button
+                  className="dw-queue-button"
+                  onClick={queueSpatialTasks}
+                  disabled={tasksQueued}
+                >
+                  <ClipboardCheck size={15} />
+                  {tasksQueued
+                    ? "Added to inspection plan"
+                    : "Add actions to inspection plan"}
+                </button>
+              </>
+            ) : (
+              <div className="dw-ai-empty">
+                <Radar size={29} />
+                <strong>Ready to interpret the change signal</strong>
+                <p>
+                  Run the spatial review to generate a bounded explanation,
+                  confidence statement, and editable evidence-collection tasks.
+                </p>
+                <div>
+                  <span>
+                    <Check size={11} /> No automated legal verdict
+                  </span>
+                  <span>
+                    <Check size={11} /> No fabricated field evidence
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <footer className="dw-disclaimer">
+          <CircleAlert size={14} />
+          <span>{dynamicWorldEvidence.disclaimer}</span>
+        </footer>
+      </div>
+
+      <section className="alphaearth-preview" aria-label="AlphaEarth preview">
+        <div className="alphaearth-copy">
+          <span>
+            <Sparkles size={13} /> Coming next
+          </span>
+          <h3>AlphaEarth similarity intelligence.</h3>
+          <p>
+            Annual parcel embeddings will retrieve comparable landscapes,
+            quantify year-to-year similarity, and rank anomalies for inspection
+            after expert calibration.
+          </p>
+          <div className="alphaearth-capabilities">
+            <span>Annual embeddings</span>
+            <span>Comparable-site retrieval</span>
+            <span>Anomaly ranking</span>
+          </div>
+        </div>
+        <div className="alphaearth-visual" aria-hidden="true">
+          <div className="ae-orbit ae-orbit-one" />
+          <div className="ae-orbit ae-orbit-two" />
+          <span className="ae-node ae-node-one">2022</span>
+          <span className="ae-node ae-node-two">2023</span>
+          <span className="ae-node ae-node-three">2024</span>
+          <div className="ae-core">
+            <Leaf size={22} />
+            <strong>Parcel embedding</strong>
+            <small>64-dimensional annual signal</small>
+          </div>
+          <div className="ae-similarity">
+            <BarChart3 size={15} />
+            <span>
+              <small>Cosine similarity</small>
+              <strong>Calibration pending</strong>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="demo-pilot-cta" id="pilot">
+        <div>
+          <span>Design partner program</span>
+          <h3>Bring one real project. Leave with a traceable review.</h3>
+          <p>
+            We are opening a limited set of partner pilots for consultants,
+            project teams, and restoration organisations across APAC.
+          </p>
+        </div>
+        <a href="/contact">
+          Request a pilot <ArrowRight size={16} />
+        </a>
+      </section>
+    </section>
   );
 }
 
@@ -1888,8 +2669,7 @@ function RevisionTab() {
   );
 }
 
-function InspectionTab({ obligations }: { obligations: Obligation[] }) {
-  const tasks = createInspectionPlan(obligations);
+function InspectionTab({ tasks }: { tasks: InspectionTask[] }) {
   const [checked, setChecked] = useState(new Set<string>());
   return (
     <div className="tab-stack">
