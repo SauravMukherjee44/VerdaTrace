@@ -1,0 +1,48 @@
+{
+  "type": "FeatureCollection",
+  "name": "VerdaTrace Screen 2 demo boundary",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Screen 2 demo parcel - Sandur project-area sample",
+        "purpose": "Demo analysis only",
+        "verification_status": "illustrative_unverified",
+        "source_note": "Synthetic polygon near the documented Sandur project-area overview; not an official project boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              76.63235,
+              15.1239
+            ],
+            [
+              76.63515,
+              15.1239
+            ],
+            [
+              76.63515,
+              15.1267
+            ],
+            [
+              76.63235,
+              15.1267
+            ],
+            [
+              76.63235,
+              15.1239
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

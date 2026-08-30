@@ -1,0 +1,1 @@
+CREATE INDEX `api_rate_limits_updated_idx` ON `api_rate_limits` (`updated_at`);

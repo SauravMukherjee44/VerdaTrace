@@ -1,0 +1,60 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.vinext/
+/out/
+
+# misc
+.DS_Store
+**/.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# netlify local state
+.netlify/
+
+# Local Codex Sites binding. It identifies a private hosting project and is not
+# required to run or evaluate the source code.
+.openai/
+
+# typescript
+next-env.d.ts
+*.tsbuildinfo
+/dist/
+/.wrangler/
+/outputs/
+/work/
+
+# Private product, diligence, and local-inspection material. These files must
+# never be added to the public repository.
+/VerdaTrace_VC_Pitch_Deck.pptx
+/VerdaTrace_VC_Pitch_Deck.pptx.inspect.ndjson
+/docs/application-draft.md
+/docs/consultant-review.md
+/demo-files/* copy.*
